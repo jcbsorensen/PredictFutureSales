@@ -1,0 +1,64 @@
+# import modin.pandas as pd
+import xgboost as xgb
+from xgboost import XGBClassifier
+from sklearn.preprocessing import LabelEncoder
+import time
+
+
+def xgb_grid_search(matrix, objective="reg:squarederror", learning_rate=[0.0001, 0.001, 0.01, 0.1, 0.2, 0.3],
+                    subsample=[0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], colsample_bytree=[0.3, 0.6, 1],
+                    colsample_bylevel=[0.3, 0.6], max_depth=[2, 4, 6, 8]):
+
+    params_list = list()
+    results_df = pd.DataFrame(columns=['objective', 'eta', 'subsample', 'max_depth', 'colsample_bytree', 'colsample_bylevel'])
+    counter = 1
+
+    for lr in learning_rate:
+        for depth in max_depth:
+            for sample in subsample:
+                for colsample in colsample_bytree:
+                    params_list.append(dict(
+                        objective=objective,
+                        eta=lr,
+                        subsample=sample,
+                        max_depth=depth,
+                        colsample_bytree=colsample
+                    ))
+                for colsample in colsample_bylevel:
+                    params_list.append(dict(
+                        objective=objective,
+                        eta=lr,
+                        subsample=sample,
+                        max_depth=depth,
+                        colsample_bylevel=colsample
+                    ))
+
+    grid_start_time = time.time()
+
+    for param in params_list:
+        print('Beginning Nr: {} out of {}'.format(counter, len(params_list)))
+        counter += 1
+        loop_start_time = time.time()
+
+        cv_results = xgb.cv(dtrain=matrix, params=param, shuffle=True, nfold=10, num_boost_round=1000,
+                            early_stopping_rounds=5, as_pandas=True, metrics='rmse', seed=3)
+
+        param['number_trees'] = cv_results.index.values[-5]
+        param['train-rmse-mean'] = round((cv_results.iloc[-5, 0]), 2)
+        param['train-rmse-std'] = round((cv_results.iloc[-5, 1]), 2)
+        param['test-rmse-mean'] = round((cv_results.iloc[-5, 2]), 2)
+        param['test-rmse-std'] = round((cv_results.iloc[-5, 3]), 2)
+        results_df = results_df.append(param, ignore_index=True)
+
+        loop_end_time = time.time()
+        loop_duration = loop_end_time - loop_start_time
+        print('Loop time: {}'.format(loop_duration))
+
+
+    results_df.to_csv('data/grid_search_xgb.csv', index=False)
+
+    grid_end_time = time.time()
+    grid_duration = grid_end_time - grid_start_time
+    print('Grid Search Time: {}'.format(grid_duration))
+
+    return results_df
